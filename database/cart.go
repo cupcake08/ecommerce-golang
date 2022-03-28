@@ -22,7 +22,7 @@ func RemoveItemFromCart() {
 
 }
 
-func BuyFromCart() {
+func BuyItemFromCart() {
 
 }
 
