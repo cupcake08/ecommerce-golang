@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -11,7 +12,8 @@ import (
 )
 
 func DBSet() *mongo.Client {
-	client, err := mongo.NewClient(options.Client().ApplyURI("mongodb+srv://titsy:ankit123@cluster0.ysk2v.mongodb.net/ecommerce?retryWrites=true&w=majority"))
+	path := os.Getenv("MONGOURI")
+	client, err := mongo.NewClient(options.Client().ApplyURI(path))
 	if err != nil {
 		log.Fatal(err)
 	}

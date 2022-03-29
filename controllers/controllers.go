@@ -8,22 +8,40 @@ import (
 
 	"github.com/cupcake08/ecommerce-go/database"
 	"github.com/cupcake08/ecommerce-go/models"
+	"github.com/cupcake08/ecommerce-go/tokens"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var Validator *validator.Validate = validator.New()
-var UserCollection *mongo.Collection = database.UserData()
+var UserCollection *mongo.Collection = database.UserData(database.Client, "Users")
+var ProductCollection *mongo.Collection = database.ProductData(database.Client, "Products")
 
 func HashPassword(password string) string {
-	return password
+	pass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Panic(err)
+	}
+	return string(pass)
 }
 
 func VerifyPassword(password string, hash string) (bool, string) {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 
+	valid := true
+	msg := ""
+
+	if err != nil {
+		msg = "Invalid Password"
+		valid = false
+		return valid, msg
+	}
+
+	return valid, msg
 }
 
 func SignUp() gin.HandlerFunc {
@@ -39,7 +57,7 @@ func SignUp() gin.HandlerFunc {
 			return
 		}
 
-		if err := Validate.Struct(user); err != nil {
+		if err := Validator.Struct(user); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})
@@ -125,9 +143,9 @@ func Login() gin.HandlerFunc {
 			return
 		}
 
+		var foundUser models.User
 		err := UserCollection.FindOne(ctx, bson.M{"email": user.Email}).Decode(&foundUser)
 		defer cancel()
-
 		if err != nil {
 			log.Fatal("email or password is incorrect")
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -135,7 +153,6 @@ func Login() gin.HandlerFunc {
 			})
 			return
 		}
-		var foundUser models.User
 		isValid, msg := VerifyPassword(*user.Password, *foundUser.Password)
 		defer cancel()
 		if !isValid {
@@ -146,10 +163,10 @@ func Login() gin.HandlerFunc {
 			return
 		}
 
-		token, refresh_token := generate.TokenGenerator(*foundUser.Email, *foundUser.First_Name, *foundUser.Last_Name, foundUser.User_Id)
+		token, refresh_token := tokens.TokenGenerator(*foundUser.Email, *foundUser.First_Name, *foundUser.Last_Name, foundUser.User_Id)
 		defer cancel()
 
-		generate.UpdateAllTokens(token, refresh_token, foundUser.User_Id)
+		tokens.UpdateAllTokens(token, refresh_token, foundUser.User_Id)
 
 		c.JSON(http.StatusFound, gin.H{
 			"message": "User logged in successfully",
@@ -163,9 +180,68 @@ func ProductViewerAdmin() gin.HandlerFunc {
 }
 
 func SearchProduct() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		products := []models.Product{}
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
 
+		cursor, err := ProductCollection.Find(ctx, bson.D{{}})
+		defer cursor.Close(ctx)
+		if err != nil {
+			c.IndentedJSON(http.StatusInternalServerError, "something went wrong, please try again")
+			return
+		}
+
+		if err := cursor.All(ctx, &products); err != nil {
+			log.Println(err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		if err := cursor.Err(); err != nil {
+			log.Println(err)
+			c.IndentedJSON(400, "invalid")
+			return
+		}
+		c.IndentedJSON(http.StatusOK, products)
+	}
 }
 
 func SearchProductByQuery() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		searchProducts := []models.Product{}
+		queryParam := c.Query("name")
 
+		if queryParam == "" {
+			log.Println("query param is empty")
+			c.Header("Content-Type", "application/json")
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "query param is empty",
+			})
+			c.Abort()
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
+		cursor, err := ProductCollection.Find(ctx, bson.M{"product_name": bson.M{"$regex": queryParam}})
+		defer cursor.Close(ctx)
+		if err != nil {
+			log.Println("Failed to find in database")
+			c.IndentedJSON(http.StatusInternalServerError, "something went wrong while fetching data")
+			return
+
+		}
+		if err := cursor.All(ctx, &searchProducts); err != nil {
+			log.Println(err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		if err := cursor.Err(); err != nil {
+			log.Println(err)
+			c.IndentedJSON(400, "invalid")
+			return
+		}
+		c.IndentedJSON(http.StatusOK, searchProducts)
+	}
 }
