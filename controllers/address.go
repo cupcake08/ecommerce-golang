@@ -80,11 +80,13 @@ func AddAddress() gin.HandlerFunc {
 }
 
 func EditHomeAddress() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
 
+	}
 }
 
 func EditWorkAddress() gin.HandlerFunc {
-
+	return func(ctx *gin.Context) {}
 }
 
 func DeleteAddress() gin.HandlerFunc {
